@@ -1,18 +1,12 @@
 import Link from "next/link";
-import { Logo } from "@/components/ui";
+import { AuthCard } from "@/components/PublicShell";
 
 export default function NotFound() {
   return (
-    <div className="auth-wrap">
-      <div className="card auth-card">
-        <Logo />
-        <h1>That page isn’t here</h1>
-        <p className="muted">The group, friend, or expense may have been removed.</p>
-        <div style={{ height: 12 }} />
-        <Link className="btn" href="/dashboard">
-          Back home
-        </Link>
-      </div>
-    </div>
+    <AuthCard title="That page isn't here" lede="The group, friend or expense may have been removed, or the link is mistyped.">
+      <Link className="btn full" href="/dashboard">
+        Back home
+      </Link>
+    </AuthCard>
   );
 }

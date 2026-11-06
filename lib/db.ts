@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
+import { config } from "./config";
 import { seedIfEmpty } from "./seed";
 
 const globalForDb = globalThis as unknown as { splitndutch?: Database.Database };
@@ -104,17 +105,73 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS notifications_user ON notifications(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  meta TEXT NOT NULL DEFAULT '',
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tokens_user ON tokens(user_id, kind);
+
+CREATE TABLE IF NOT EXISTS reminders (
+  id TEXT PRIMARY KEY,
+  from_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  group_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS reminders_pair ON reminders(from_user, to_user, created_at);
 `;
+
+/** Columns added after the first release. Each runs once, only if the column is missing. */
+const COLUMNS: [table: string, column: string, definition: string][] = [
+  // active: normal account · invited: has an email, hasn't set a password yet
+  // guest: name only, added to a group without an email · deleted: anonymised account
+  ["users", "status", "TEXT NOT NULL DEFAULT 'active'"],
+  ["users", "upi_id", "TEXT NOT NULL DEFAULT ''"],
+  ["users", "email_verified_at", "TEXT"],
+  // 0 = no email, 1 = important only (invites, reminders, payments), 2 = every change
+  ["users", "email_prefs", "INTEGER NOT NULL DEFAULT 1"],
+  ["users", "invited_by", "TEXT"],
+  ["groups", "currency", "TEXT NOT NULL DEFAULT 'INR'"],
+  ["groups", "invite_code", "TEXT"],
+  ["groups", "budget_minor", "INTEGER"],
+  ["groups", "destination", "TEXT NOT NULL DEFAULT ''"],
+  ["groups", "start_date", "TEXT"],
+  ["groups", "end_date", "TEXT"],
+];
+
+function migrate(db: Database.Database) {
+  for (const [table, column, definition] of COLUMNS) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS groups_invite_code ON groups(invite_code) WHERE invite_code IS NOT NULL`);
+}
+
+/** Create every table and apply column migrations. Safe to run on every start. */
+export function initSchema(db: Database.Database) {
+  db.exec(SCHEMA);
+  migrate(db);
+}
+
+export function dataPath(...parts: string[]): string {
+  return path.resolve(/*turbopackIgnore: true*/ process.cwd(), config.dataDir, ...parts);
+}
 
 export function getDb(): Database.Database {
   if (!globalForDb.splitndutch) {
-    const dir = path.join(process.cwd(), "data");
-    fs.mkdirSync(dir, { recursive: true });
-    const db = new Database(path.join(dir, "splitndutch.db"));
+    fs.mkdirSync(dataPath(), { recursive: true });
+    const db = new Database(dataPath("splitndutch.db"));
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
-    db.exec(SCHEMA);
-    seedIfEmpty(db);
+    db.pragma("busy_timeout = 5000");
+    initSchema(db);
+    if (config.demoMode) seedIfEmpty(db);
     globalForDb.splitndutch = db;
   }
   return globalForDb.splitndutch;

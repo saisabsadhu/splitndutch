@@ -6,8 +6,9 @@ import { searchEverything } from "@/lib/queries";
 
 export const metadata = { title: "Search" };
 
-export default function SearchPage({ searchParams }: { searchParams: { q?: string } }) {
-  const user = requireUser();
+export default async function SearchPage({ searchParams: spPromise }: { searchParams: Promise<{ q?: string }> }) {
+  const searchParams = await spPromise;
+  const user = await requireUser();
   const q = searchParams.q ?? "";
   const data = searchEverything(user.id, q);
   return (

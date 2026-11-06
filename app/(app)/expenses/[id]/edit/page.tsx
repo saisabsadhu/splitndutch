@@ -5,9 +5,10 @@ import { canSeeExpense, getExpense, listFriends, listGroups, listPeople } from "
 
 export const metadata = { title: "Edit expense" };
 
-export default function EditExpensePage({ params }: { params: { id: string } }) {
-  const user = requireUser();
-  const expense = getExpense(params.id);
+export default async function EditExpensePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const user = await requireUser();
+  const expense = getExpense(id);
   if (!expense || !canSeeExpense(user.id, expense)) notFound();
   const groups = listGroups(user.id);
   const friends = listFriends(user.id);
@@ -24,7 +25,8 @@ export default function EditExpensePage({ params }: { params: { id: string } }) 
       <ExpenseForm
         me={{ id: user.id, name: user.name }}
         friends={friends}
-        groups={groups.map((g) => ({ id: g.id, name: g.name, memberIds: g.memberIds }))}
+        groups={groups.map((g) => ({ id: g.id, name: g.name, memberIds: g.memberIds, currency: g.currency }))}
+        defaultCurrency={user.currency}
         people={people}
         initial={{
           id: expense.id,

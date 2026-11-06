@@ -1,8 +1,16 @@
-export type Person = { id: string; name: string; email: string };
+/** status: active · invited (email, no password yet) · guest (name only) · deleted */
+export type Person = { id: string; name: string; email: string; status?: string; upiId?: string };
 
 export type MoneyLine = { currency: string; minor: number };
 
-export type SessionUser = Person & { currency: string; createdAt: string };
+export type SessionUser = Person & {
+  currency: string;
+  createdAt: string;
+  upiId: string;
+  /** 0 none, 1 important, 2 everything */
+  emailPrefs: number;
+  verified: boolean;
+};
 
 export type GroupRecord = {
   id: string;
@@ -12,6 +20,12 @@ export type GroupRecord = {
   simplify: boolean;
   archived: boolean;
   createdAt: string;
+  currency: string;
+  inviteCode: string | null;
+  budgetMinor: number | null;
+  destination: string;
+  startDate: string | null;
+  endDate: string | null;
 };
 
 export type ExpenseRecord = {

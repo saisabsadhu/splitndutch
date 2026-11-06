@@ -1,26 +1,33 @@
 {
   "name": "splitndutch",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "verify": "tsx scripts/verify.ts"
+    "verify": "tsx scripts/verify.ts",
+    "test:integration": "tsx scripts/integration.ts",
+    "test": "tsx scripts/verify.ts && tsx scripts/integration.ts",
+    "typecheck": "tsc --noEmit",
+    "ledger": "tsx scripts/ledger.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.6.0",
-    "next": "^14.2.18",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "next": "^16.4.5",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^20.17.6",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }

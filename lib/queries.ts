@@ -145,30 +145,32 @@ export function listPeople(ids: string[]): Person[] {
   const unique = [...new Set(ids)];
   const marks = unique.map(() => "?").join(",");
   const rows = getDb()
-    .prepare(`SELECT id, name, email FROM users WHERE id IN (${marks})`)
+    .prepare(`SELECT id, name, email, status, upi_id AS upiId FROM users WHERE id IN (${marks})`)
     .all(...unique) as Person[];
   const order = new Map(unique.map((id, i) => [id, i]));
   return rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
 }
 
 export function getPerson(id: string): Person | null {
-  return (getDb().prepare(`SELECT id, name, email FROM users WHERE id = ?`).get(id) as Person | undefined) ?? null;
+  return (
+    (getDb().prepare(`SELECT id, name, email, status, upi_id AS upiId FROM users WHERE id = ?`).get(id) as Person | undefined) ?? null
+  );
 }
 
-export function findUserByEmail(email: string): (Person & { currency: string }) | null {
+export function findUserByEmail(email: string): (Person & { currency: string; status: string }) | null {
   return (
     (getDb()
-      .prepare(`SELECT id, name, email, currency FROM users WHERE email = ? COLLATE NOCASE`)
-      .get(email.trim().toLowerCase()) as (Person & { currency: string }) | undefined) ?? null
+      .prepare(`SELECT id, name, email, currency, status, upi_id AS upiId FROM users WHERE email = ? COLLATE NOCASE`)
+      .get(email.trim().toLowerCase()) as (Person & { currency: string; status: string }) | undefined) ?? null
   );
 }
 
 export function listFriends(userId: string): Person[] {
   const rows = getDb()
     .prepare(
-      `SELECT u.id, u.name, u.email FROM friendships f
+      `SELECT u.id, u.name, u.email, u.status, u.upi_id AS upiId FROM friendships f
        JOIN users u ON u.id = CASE WHEN f.user_low = ? THEN f.user_high ELSE f.user_low END
-       WHERE f.user_low = ? OR f.user_high = ?
+       WHERE (f.user_low = ? OR f.user_high = ?) AND u.status != 'deleted'
        ORDER BY u.name COLLATE NOCASE`,
     )
     .all(userId, userId, userId) as Person[];
@@ -183,39 +185,35 @@ export function areFriends(a: string, b: string): boolean {
   return Boolean(row);
 }
 
+type GroupRow = Omit<GroupRecord, "simplify" | "archived"> & { simplify: number; archived: number };
+
+function mapGroup(g: GroupRow, memberIds: string[]): GroupRecord & { memberIds: string[] } {
+  return { ...g, simplify: g.simplify === 1, archived: g.archived === 1, memberIds };
+}
+
+export function findGroupByInvite(code: string): (GroupRecord & { memberIds: string[] }) | null {
+  const row = getDb().prepare(`SELECT id FROM groups WHERE invite_code = ? AND archived = 0`).get(code) as { id: string } | undefined;
+  return row ? getGroup(row.id) : null;
+}
+
 export function listGroups(userId: string): (GroupRecord & { memberIds: string[] })[] {
   const db = getDb();
   const groups = db
     .prepare(
-      `SELECT g.id, g.name, g.type, g.created_by AS createdBy, g.simplify, g.archived, g.created_at AS createdAt
+      `SELECT g.id, g.name, g.type, g.created_by AS createdBy, g.simplify, g.archived, g.created_at AS createdAt,
+              g.currency, g.invite_code AS inviteCode, g.budget_minor AS budgetMinor, g.destination,
+              g.start_date AS startDate, g.end_date AS endDate
        FROM groups g
        JOIN group_members me ON me.group_id = g.id AND me.user_id = ?
        WHERE g.archived = 0
        ORDER BY g.name COLLATE NOCASE`,
     )
-    .all(userId) as {
-    id: string;
-    name: string;
-    type: string;
-    createdBy: string;
-    simplify: number;
-    archived: number;
-    createdAt: string;
-  }[];
+    .all(userId) as GroupRow[];
   return groups.map((g) => {
     const members = db
       .prepare(`SELECT user_id FROM group_members WHERE group_id = ? ORDER BY created_at`)
       .all(g.id) as { user_id: string }[];
-    return {
-      id: g.id,
-      name: g.name,
-      type: g.type,
-      createdBy: g.createdBy,
-      simplify: g.simplify === 1,
-      archived: g.archived === 1,
-      createdAt: g.createdAt,
-      memberIds: members.map((m) => m.user_id),
-    };
+    return mapGroup(g, members.map((m) => m.user_id));
   });
 }
 
@@ -223,32 +221,17 @@ export function getGroup(id: string): (GroupRecord & { memberIds: string[] }) | 
   const db = getDb();
   const g = db
     .prepare(
-      `SELECT id, name, type, created_by AS createdBy, simplify, archived, created_at AS createdAt
-       FROM groups WHERE id = ?`,
+      `SELECT g.id, g.name, g.type, g.created_by AS createdBy, g.simplify, g.archived, g.created_at AS createdAt,
+              g.currency, g.invite_code AS inviteCode, g.budget_minor AS budgetMinor, g.destination,
+              g.start_date AS startDate, g.end_date AS endDate
+       FROM groups g WHERE g.id = ?`,
     )
-    .get(id) as
-    | {
-        id: string;
-        name: string;
-        type: string;
-        createdBy: string;
-        simplify: number;
-        archived: number;
-        createdAt: string;
-      }
-    | undefined;
+    .get(id) as GroupRow | undefined;
   if (!g || g.archived) return null;
-  const members = db.prepare(`SELECT user_id FROM group_members WHERE group_id = ?`).all(id) as { user_id: string }[];
-  return {
-    id: g.id,
-    name: g.name,
-    type: g.type,
-    createdBy: g.createdBy,
-    simplify: g.simplify === 1,
-    archived: false,
-    createdAt: g.createdAt,
-    memberIds: members.map((m) => m.user_id),
-  };
+  const members = db
+    .prepare(`SELECT user_id FROM group_members WHERE group_id = ? ORDER BY created_at`)
+    .all(id) as { user_id: string }[];
+  return mapGroup(g, members.map((m) => m.user_id));
 }
 
 export function isMember(groupId: string, userId: string): boolean {
@@ -316,6 +299,9 @@ export type DashboardData = {
     id: string;
     name: string;
     type: string;
+    destination: string;
+    startDate: string | null;
+    endDate: string | null;
     memberCount: number;
     lines: MoneyLine[];
     lastDate: string | null;
@@ -365,6 +351,9 @@ export function loadDashboard(user: SessionUser): DashboardData {
         id: g.id,
         name: g.name,
         type: g.type,
+        destination: g.destination,
+        startDate: g.startDate,
+        endDate: g.endDate,
         memberCount: g.memberIds.length,
         lines: userNet(debts, user.id, `g:${g.id}:`),
         lastDate,
@@ -564,7 +553,7 @@ export function groupDetail(userId: string, groupId: string) {
   const suggestions = debts.filter((d) => d.scope.startsWith(`g:${groupId}:`));
   const month = monthKey(todayISO());
   const spending = new Map<string, number>();
-  const spendCurrency = expenses.find((e) => e.category !== "settlement")?.currency ?? "USD";
+  const spendCurrency = group.currency || expenses.find((e) => e.category !== "settlement")?.currency || "INR";
   for (const e of expenses) {
     if (e.category === "settlement" || monthKey(e.expenseDate) !== month || e.currency !== spendCurrency) continue;
     spending.set(e.category, (spending.get(e.category) ?? 0) + e.amountMinor);
@@ -579,5 +568,35 @@ export function groupDetail(userId: string, groupId: string) {
     spendCurrency,
     recurring: recurringDue(userId, expenses, groupName),
     myLines: userNet(debts, userId, `g:${groupId}:`),
+    stats: groupStats(expenses, members, spendCurrency),
+  };
+}
+
+/** Whole-trip numbers in the group's main currency: total spent, and each person's paid vs. used. */
+export function groupStats(expenses: ExpenseRecord[], members: Person[], currency: string) {
+  const paid = new Map<string, number>();
+  const used = new Map<string, number>();
+  let total = 0;
+  let count = 0;
+  let otherCurrencies = false;
+  for (const e of expenses) {
+    if (e.category === "settlement") continue;
+    if (e.currency !== currency) {
+      otherCurrencies = true;
+      continue;
+    }
+    total += e.amountMinor;
+    count++;
+    for (const p of e.payers) paid.set(p.userId, (paid.get(p.userId) ?? 0) + p.minor);
+    for (const sh of e.shares) used.set(sh.userId, (used.get(sh.userId) ?? 0) + sh.minor);
+  }
+  return {
+    currency,
+    total,
+    count,
+    otherCurrencies,
+    people: members
+      .map((m) => ({ person: m, paid: paid.get(m.id) ?? 0, used: used.get(m.id) ?? 0 }))
+      .sort((a, b) => b.paid - a.paid),
   };
 }

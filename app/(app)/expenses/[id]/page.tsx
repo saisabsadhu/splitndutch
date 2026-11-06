@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CommentForm } from "@/components/Forms";
 import { ConfirmButton } from "@/components/Fields";
-import { CategoryDot, Flash } from "@/components/ui";
+import { Flash } from "@/components/ui";
 import { commentDelete, expenseDelete, recurringStop } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { getCategory } from "@/lib/categories";
@@ -13,15 +13,17 @@ import { canSeeExpense, getExpense, getGroup, getPerson, listComments, nameMapFo
 
 export const metadata = { title: "Expense" };
 
-export default function ExpensePage({
+export default async function ExpensePage({
   params,
   searchParams,
 }: {
-  params: { id: string };
-  searchParams: { notice?: string; error?: string };
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ notice?: string; error?: string }>;
 }) {
-  const user = requireUser();
-  const expense = getExpense(params.id);
+  const { id } = await params;
+  const sp = await searchParams;
+  const user = await requireUser();
+  const expense = getExpense(id);
   if (!expense || !canSeeExpense(user.id, expense)) notFound();
   const names = nameMapFor([expense]);
   const group = expense.groupId ? getGroup(expense.groupId) : null;
@@ -39,11 +41,11 @@ export default function ExpensePage({
           : "Split by exact amounts";
   return (
     <>
-      <Flash notice={searchParams.notice} error={searchParams.error} />
+      <Flash notice={sp.notice} error={sp.error} />
       <div className="page-head">
         <div>
           <p className="kicker">
-            <CategoryDot id={expense.category} /> {getCategory(expense.category).label}
+            {getCategory(expense.category).icon} {getCategory(expense.category).label}
             {group ? ` · ${group.name}` : " · Outside a group"}
           </p>
           <h1>{expense.description}</h1>

@@ -1,11 +1,46 @@
 "use client";
 
-import { useFormState } from "react-dom";
-import { settlementSave } from "@/lib/actions";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
+import { settlementSave, type FormState } from "@/lib/actions";
 import { CURRENCIES } from "@/lib/money";
 import { todayISO } from "@/lib/dates";
 
 type Person = { id: string; name: string };
+
+export function Submit({ children, className = "btn", pendingLabel = "Saving…" }: { children: React.ReactNode; className?: string; pendingLabel?: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button className={className} type="submit" disabled={pending}>
+      {pending ? pendingLabel : children}
+    </button>
+  );
+}
+
+export function RecordPaidButton({
+  action,
+  fields,
+}: {
+  action: (prev: FormState, fd: FormData) => Promise<FormState>;
+  fields: Record<string, string>;
+}) {
+  const [state, run] = useActionState(action, { error: "" });
+  return (
+    <form action={run}>
+      {Object.entries(fields).map(([k, v]) => (
+        <input key={k} type="hidden" name={k} value={v} />
+      ))}
+      <Submit className="btn soft full small" pendingLabel="Recording…">
+        I've paid, record it
+      </Submit>
+      {state.error ? (
+        <p className="alert" role="alert">
+          {state.error}
+        </p>
+      ) : null}
+    </form>
+  );
+}
 
 export function SettleForm({
   me,
@@ -14,6 +49,7 @@ export function SettleForm({
   groups,
   defaultFrom,
   defaultTo,
+  defaultAmount,
   currency,
 }: {
   me: Person;
@@ -22,9 +58,10 @@ export function SettleForm({
   groups?: { id: string; name: string }[];
   defaultFrom?: string;
   defaultTo?: string;
+  defaultAmount?: string;
   currency: string;
 }) {
-  const [state, action] = useFormState(settlementSave, { error: "" });
+  const [state, action] = useActionState(settlementSave, { error: "" });
   const options = people.some((p) => p.id === me.id) ? people : [me, ...people];
   return (
     <form action={action} className="stack">
@@ -65,10 +102,10 @@ export function SettleForm({
           </select>
         </label>
       </div>
-      <div className="grid-2">
+      <div className="amount-row">
         <label className="field">
           <span>Amount</span>
-          <input name="amount" inputMode="decimal" placeholder="0.00" required />
+          <input name="amount" inputMode="decimal" placeholder="0" defaultValue={defaultAmount} required />
         </label>
         <label className="field">
           <span>Currency</span>
@@ -81,22 +118,28 @@ export function SettleForm({
           </select>
         </label>
       </div>
-      <label className="field">
-        <span>Date</span>
-        <input type="date" name="date" defaultValue={todayISO()} required />
-      </label>
-      <label className="field">
-        <span>Note</span>
-        <input name="note" placeholder="Venmo, cash, bank transfer" maxLength={2000} />
-      </label>
+      <div className="grid-2">
+        <label className="field">
+          <span>Date</span>
+          <input type="date" name="date" defaultValue={todayISO()} required />
+        </label>
+        <label className="field">
+          <span>Paid via</span>
+          <input name="note" placeholder="UPI, cash, bank transfer" maxLength={2000} list="pay-methods" />
+          <datalist id="pay-methods">
+            <option value="UPI" />
+            <option value="Cash" />
+            <option value="Bank transfer" />
+            <option value="Card" />
+          </datalist>
+        </label>
+      </div>
       {state.error ? (
         <p className="alert" role="alert">
           {state.error}
         </p>
       ) : null}
-      <button className="btn" type="submit">
-        Record payment
-      </button>
+      <Submit>Record payment</Submit>
     </form>
   );
 }

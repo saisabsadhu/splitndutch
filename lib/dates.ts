@@ -2,10 +2,17 @@ export function nowISO(): string {
   return new Date().toISOString();
 }
 
+/** The app's calendar day. Defaults to India time so "today" doesn't flip at 5:30 am IST on a UTC server. */
+const APP_TZ = process.env.NEXT_PUBLIC_APP_TZ || "Asia/Kolkata";
+
 export function todayISO(date = new Date()): string {
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${m}-${d}`;
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: APP_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  } catch {
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${date.getFullYear()}-${m}-${d}`;
+  }
 }
 
 export function addDays(iso: string, days: number): string {
@@ -26,7 +33,7 @@ export function addMonths(iso: string, months: number): string {
 export function formatDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
-  return dt.toLocaleDateString("en-US", {
+  return dt.toLocaleDateString("en-IN", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -36,11 +43,12 @@ export function formatDate(iso: string): string {
 
 export function formatWhen(iso: string): string {
   const date = new Date(iso);
-  return date.toLocaleString("en-US", {
+  return date.toLocaleString("en-IN", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: APP_TZ,
   });
 }
 
@@ -51,7 +59,7 @@ export function monthKey(isoDate: string): string {
 export function formatMonth(key: string): string {
   const [y, m] = key.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, 1));
-  return dt.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  return dt.toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
 export type RepeatInterval = "weekly" | "monthly";

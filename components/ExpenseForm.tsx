@@ -4,15 +4,15 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { expenseSave } from "@/lib/actions";
 import { expenseDeltas } from "@/lib/balances";
-import { CATEGORIES } from "@/lib/categories";
+import { CATEGORIES, guessCategory } from "@/lib/categories";
 import { todayISO } from "@/lib/dates";
-import { CURRENCIES, allocate, formatMoney, getCurrency, parseMoney } from "@/lib/money";
+import { CURRENCIES, allocate, evalAmount, formatMoney, getCurrency, parseMoney } from "@/lib/money";
 import { balanceLabel } from "@/lib/phrases";
 import type { ExpenseInput } from "@/lib/types";
 import { CategoryDot } from "./ui";
 
 type Person = { id: string; name: string };
-type GroupOpt = { id: string; name: string; memberIds: string[] };
+type GroupOpt = { id: string; name: string; memberIds: string[]; currency: string };
 
 type Initial = {
   id: string;
@@ -40,6 +40,7 @@ export function ExpenseForm({
   initial,
   presetGroupId,
   presetFriendId,
+  defaultCurrency = "INR",
 }: {
   me: Person;
   friends: Person[];
@@ -48,12 +49,16 @@ export function ExpenseForm({
   initial?: Initial;
   presetGroupId?: string;
   presetFriendId?: string;
+  defaultCurrency?: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const [description, setDescription] = useState(initial?.description ?? "");
-  const [currency, setCurrency] = useState(initial?.currency ?? "USD");
+  const [currency, setCurrency] = useState(
+    initial?.currency ?? groups.find((g) => g.id === presetGroupId)?.currency ?? defaultCurrency,
+  );
+  const [categoryTouched, setCategoryTouched] = useState(Boolean(initial));
   const [amount, setAmount] = useState(initial ? moneyMap([{ userId: "x", minor: initial.amountMinor }], initial.currency).x : "");
   const [category, setCategory] = useState(initial?.category ?? "general");
   const [date, setDate] = useState(initial?.date ?? todayISO());
@@ -93,19 +98,22 @@ export function ExpenseForm({
   }, [groupId, groups, friends, me, byId]);
 
   const nameOf = (id: string) => (id === me.id ? "You" : byId.get(id)?.name ?? "Someone");
-  const total = parseMoney(amount, currency);
+  const total = evalAmount(amount, currency);
+  const isExpression = /[+\-*/×÷()]/.test(amount.replace(/^\s*-/, ""));
   const selectedShares = universe.filter((p) => shareOn[p.id]).map((p) => p.id);
 
   function onGroup(next: string) {
     setGroupId(next);
     if (initial) return;
+    const groupCurrency = groups.find((g) => g.id === next)?.currency;
+    if (groupCurrency) setCurrency(groupCurrency);
     const members = next === "none" ? [me.id] : groups.find((g) => g.id === next)?.memberIds ?? [me.id];
     setShareOn(Object.fromEntries(members.map((id) => [id, true])));
     if (!members.includes(singlePayer)) setSinglePayer(members.includes(me.id) ? me.id : members[0]);
   }
 
   function shareParts(): { error: string } | { shares: ExpenseInput["shares"] } {
-    if (total === null) return { error: "Enter an amount like 24.50." };
+    if (total === null) return { error: "Enter an amount like 450 or 120+80." };
     if (selectedShares.length === 0) return { error: "Choose at least one person to split with." };
     if (splitType === "equal") {
       const parts = allocate(total, selectedShares.map(() => 1));
@@ -226,12 +234,21 @@ export function ExpenseForm({
       <div className="card pad stack">
         <label className="field">
           <span>Description</span>
-          <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={80} placeholder="Dinner, rent, taxi" autoFocus />
+          <input
+            value={description}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              if (!categoryTouched) setCategory(guessCategory(e.target.value) ?? "general");
+            }}
+            maxLength={80}
+            placeholder="Swiggy dinner, Ola to airport, rent…"
+            autoFocus
+          />
         </label>
         <div className="amount-row">
           <label className="field">
-            <span>Amount</span>
-            <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+            <span>Amount {isExpression && total !== null ? <em className="calc">= {formatMoney(total, currency)}</em> : null}</span>
+            <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0 or 120+80+45" aria-describedby="calc-hint" />
           </label>
           <label className="field">
             <span>Currency</span>
@@ -251,7 +268,15 @@ export function ExpenseForm({
           ) : (
             <div className="cat-grid" role="listbox" aria-label="Category">
               {CATEGORIES.filter((c) => c.pickable).map((c) => (
-                <button key={c.id} type="button" className={category === c.id ? "cat on" : "cat"} onClick={() => setCategory(c.id)}>
+                <button
+                  key={c.id}
+                  type="button"
+                  className={category === c.id ? "cat on" : "cat"}
+                  onClick={() => {
+                    setCategory(c.id);
+                    setCategoryTouched(true);
+                  }}
+                >
                   <CategoryDot id={c.id} /> {c.label}
                 </button>
               ))}
@@ -398,7 +423,10 @@ export function ExpenseForm({
             {line}
           </p>
         ))}
-        <p className="tiny muted">A payment record is a settle-up, not a new bill. Use Settle up when someone pays a friend back.</p>
+        <p className="tiny muted" id="calc-hint">
+          Tip: type sums straight into the amount, like 450+320+90 for three bills, or 2400/3.
+        </p>
+        <p className="tiny muted">Paying someone back? Use Settle up on the group or friend page instead.</p>
       </aside>
     </div>
   );

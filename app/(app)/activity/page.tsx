@@ -6,8 +6,9 @@ import { activityList } from "@/lib/queries";
 
 export const metadata = { title: "Activity" };
 
-export default function ActivityPage({ searchParams }: { searchParams: { kind?: string; month?: string } }) {
-  const user = requireUser();
+export default async function ActivityPage({ searchParams: spPromise }: { searchParams: Promise<{ kind?: string; month?: string }> }) {
+  const searchParams = await spPromise;
+  const user = await requireUser();
   const kind = searchParams.kind === "settlement" || searchParams.kind === "expense" ? searchParams.kind : "all";
   const month = searchParams.month ?? "";
   const data = activityList(user.id, kind, month);

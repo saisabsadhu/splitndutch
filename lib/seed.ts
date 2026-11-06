@@ -1,225 +1,154 @@
 import bcrypt from "bcryptjs";
 import type Database from "better-sqlite3";
+import { randomBytes } from "crypto";
 import { addDays, todayISO } from "./dates";
-import { addNotification, ensureFriendship, insertExpense } from "./records";
+import { ensureFriendship, insertExpense } from "./records";
 
-const DEMO_PASSWORD = "demo1234";
+export const DEMO_EMAIL = "ananya@splitndutch.app";
+export const DEMO_PASSWORD = "demo1234";
 
-type DemoUser = { id: string; name: string; email: string };
-
-const MAYA = "usr_maya";
-const ARUN = "usr_arun";
-const LENA = "usr_lena";
-const SAM = "usr_sam";
+const ANANYA = "usr_ananya";
+const ROHAN = "usr_rohan";
+const KABIR = "usr_kabir";
 const PRIYA = "usr_priya";
-const NOAH = "usr_noah";
+const ZOYA = "usr_zoya";
+const DEV = "usr_dev";
+const BUNTY = "usr_bunty";
 
-const HOME = "grp_apartment";
-const TRIP = "grp_lisbon";
-const DINNERS = "grp_fridays";
+const FLAT = "grp_flat";
+const SIKKIM = "grp_sikkim";
+const CHAI = "grp_chai";
 
+/** Demo household, only created when DEMO_MODE is on and the database is empty. */
 export function seedIfEmpty(db: Database.Database) {
   const count = db.prepare(`SELECT COUNT(*) AS n FROM users`).get() as { n: number };
   if (count.n > 0) return;
 
   const hash = bcrypt.hashSync(DEMO_PASSWORD, 10);
   const now = new Date().toISOString();
-  const people: DemoUser[] = [
-    { id: MAYA, name: "Maya Chen", email: "maya@splitndutch.app" },
-    { id: ARUN, name: "Arun Shah", email: "arun@splitndutch.app" },
-    { id: LENA, name: "Lena Voss", email: "lena@splitndutch.app" },
-    { id: SAM, name: "Sam Okonkwo", email: "sam@splitndutch.app" },
-    { id: PRIYA, name: "Priya Nair", email: "priya@splitndutch.app" },
-    { id: NOAH, name: "Noah Berg", email: "noah@splitndutch.app" },
+  const people = [
+    { id: ANANYA, name: "Ananya Iyer", email: DEMO_EMAIL, upi: "ananya@okicici" },
+    { id: ROHAN, name: "Rohan Mehta", email: "rohan@splitndutch.app", upi: "rohan@ybl" },
+    { id: KABIR, name: "Kabir Singh", email: "kabir@splitndutch.app", upi: "" },
+    { id: PRIYA, name: "Priya Nair", email: "priya@splitndutch.app", upi: "priya@okaxis" },
+    { id: ZOYA, name: "Zoya Khan", email: "zoya@splitndutch.app", upi: "zoya@paytm" },
+    { id: DEV, name: "Dev Patel", email: "dev@splitndutch.app", upi: "" },
   ];
 
-  const insertUser = db.prepare(
-    `INSERT INTO users (id, name, email, password_hash, currency, created_at) VALUES (?, ?, ?, ?, 'USD', ?)`,
-  );
-  const insertGroup = db.prepare(
-    `INSERT INTO groups (id, name, type, created_by, simplify, archived, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`,
-  );
-  const insertMember = db.prepare(
-    `INSERT INTO group_members (group_id, user_id, created_at) VALUES (?, ?, ?)`,
-  );
-
   const tx = db.transaction(() => {
-    for (const person of people) insertUser.run(person.id, person.name, person.email, hash, now);
+    const insertUser = db.prepare(
+      `INSERT INTO users (id, name, email, password_hash, currency, created_at, status, upi_id, email_verified_at)
+       VALUES (?, ?, ?, ?, 'INR', ?, 'active', ?, ?)`,
+    );
+    for (const p of people) insertUser.run(p.id, p.name, p.email, hash, now, p.upi, now);
+    // A friend with no email yet, added by name only.
+    db.prepare(
+      `INSERT INTO users (id, name, email, password_hash, currency, created_at, status) VALUES (?, ?, ?, '', 'INR', ?, 'guest')`,
+    ).run(BUNTY, "Bunty", "guest-bunty@guest.invalid", now);
 
-    const friendPairs: [string, string][] = [
-      [MAYA, ARUN],
-      [MAYA, LENA],
-      [MAYA, SAM],
-      [MAYA, PRIYA],
-      [MAYA, NOAH],
-      [ARUN, LENA],
-      [ARUN, PRIYA],
-      [LENA, PRIYA],
-      [SAM, NOAH],
-      [ARUN, SAM],
-      [ARUN, NOAH],
-    ];
-    for (const [a, b] of friendPairs) ensureFriendship(db, a, b);
-
-    insertGroup.run(HOME, "Apartment 4B", "home", MAYA, 1, now);
-    insertGroup.run(TRIP, "Lisbon weekend", "trip", SAM, 1, now);
-    insertGroup.run(DINNERS, "Friday dinners", "other", MAYA, 0, now);
-
-    for (const id of [MAYA, ARUN, LENA, PRIYA]) insertMember.run(HOME, id, now);
-    for (const id of [MAYA, SAM, NOAH]) insertMember.run(TRIP, id, now);
-    for (const id of [MAYA, ARUN, SAM, NOAH]) insertMember.run(DINNERS, id, now);
+    for (const [a, b] of [
+      [ANANYA, ROHAN], [ANANYA, KABIR], [ANANYA, PRIYA], [ANANYA, ZOYA], [ANANYA, DEV],
+      [ROHAN, KABIR], [ROHAN, PRIYA], [KABIR, PRIYA], [ZOYA, DEV], [ANANYA, BUNTY], [ZOYA, BUNTY], [DEV, BUNTY],
+    ]) ensureFriendship(db, a, b);
 
     const today = todayISO();
-    const monthStart = `${today.slice(0, 7)}-01`;
+    const group = db.prepare(
+      `INSERT INTO groups (id, name, type, created_by, simplify, archived, created_at, currency, invite_code, destination, start_date, end_date, budget_minor)
+       VALUES (?, ?, ?, ?, 1, 0, ?, 'INR', ?, ?, ?, ?, ?)`,
+    );
+    group.run(FLAT, "Flat 302, Koramangala", "home", ANANYA, now, randomBytes(6).toString("base64url"), "", null, null, null);
+    group.run(SIKKIM, "Sikkim road trip", "trip", ZOYA, now, randomBytes(6).toString("base64url"), "sikkim", addDays(today, -2), addDays(today, 4), 6000000);
+    group.run(CHAI, "Office chai gang", "office", ANANYA, now, randomBytes(6).toString("base64url"), "", null, null, null);
 
-    const expense = (
+    const member = db.prepare(`INSERT INTO group_members (group_id, user_id, created_at) VALUES (?, ?, ?)`);
+    for (const id of [ANANYA, ROHAN, KABIR, PRIYA]) member.run(FLAT, id, now);
+    for (const id of [ANANYA, ZOYA, DEV, BUNTY]) member.run(SIKKIM, id, now);
+    for (const id of [ANANYA, ROHAN, ZOYA, DEV]) member.run(CHAI, id, now);
+
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const add = (
       id: string,
       groupId: string | null,
       description: string,
-      minor: number,
+      rupees: number,
       category: string,
       date: string,
-      createdBy: string,
+      by: string,
       payers: [string, number][],
-      shares: [string, number][],
-      extra?: { notes?: string; splitType?: "equal" | "exact" | "percent" | "shares"; repeat?: "weekly" | "monthly" | "none" },
+      sharedBy: string[],
+      extra: { notes?: string; repeat?: "monthly" | "weekly" } = {},
     ) => {
+      const minor = Math.round(rupees * 100);
+      const base = Math.floor(minor / sharedBy.length);
+      const shares = sharedBy.map((userId, i) => ({ userId, minor: base + (i < minor - base * sharedBy.length ? 1 : 0) }));
       insertExpense(db, {
         id,
         groupId,
         description,
         amountMinor: minor,
-        currency: "USD",
+        currency: "INR",
         category,
         date,
-        notes: extra?.notes ?? "",
-        splitType: extra?.splitType ?? "equal",
-        payers: payers.map(([userId, amount]) => ({ userId, minor: amount })),
-        shares: shares.map(([userId, amount]) => ({ userId, minor: amount })),
-        repeat: extra?.repeat ?? "none",
+        notes: extra.notes ?? "",
+        splitType: "equal",
+        payers: payers.map(([userId, r]) => ({ userId, minor: Math.round(r * 100) })),
+        shares,
+        repeat: extra.repeat ?? "none",
         repeatUntil: null,
-        createdBy,
+        createdBy: by,
       });
     };
 
-    expense("exp_rent", HOME, "November rent", 240000, "rent", monthStart, MAYA, [[MAYA, 240000]], [
-      [MAYA, 60000],
-      [ARUN, 60000],
-      [LENA, 60000],
-      [PRIYA, 60000],
-    ], { notes: "Due on the 1st. Maya pays the landlord.", repeat: "monthly" });
+    const flat = [ANANYA, ROHAN, KABIR, PRIYA];
+    add("exp_rent", FLAT, "Rent", 64000, "rent", monthStart, ANANYA, [[ANANYA, 64000]], flat, {
+      notes: "Owner's UPI gets it on the 1st. Ananya pays.",
+      repeat: "monthly",
+    });
+    add("exp_bescom", FLAT, "BESCOM electricity", 3280, "utilities", addDays(today, -6), ROHAN, [[ROHAN, 3280]], flat);
+    add("exp_cook", FLAT, "Cook didi", 8000, "help", addDays(today, -10), PRIYA, [[PRIYA, 8000]], flat, { repeat: "monthly" });
+    add("exp_wifi", FLAT, "ACT Fibernet", 1179, "internet", addDays(today, -12), KABIR, [[KABIR, 1179]], flat);
+    add("exp_blinkit", FLAT, "Blinkit groceries", 2146, "groceries", addDays(today, -2), ANANYA, [[ANANYA, 2146]], flat);
 
-    expense("exp_power", HOME, "Electricity", 18640, "utilities", addDays(today, -6), ARUN, [[ARUN, 18640]], [
-      [MAYA, 4660],
-      [ARUN, 4660],
-      [LENA, 4660],
-      [PRIYA, 4660],
-    ]);
+    const trip = [ANANYA, ZOYA, DEV, BUNTY];
+    add("exp_flights", SIKKIM, "IndiGo BLR → Bagdogra", 26400, "travel", addDays(today, -20), ZOYA, [[ZOYA, 26400]], trip);
+    add("exp_innova", SIKKIM, "Innova for 6 days", 24000, "transport", addDays(today, -2), DEV, [[DEV, 12000], [ANANYA, 12000]], trip, {
+      notes: "Driver: Pemba. Includes North Sikkim permit fees.",
+    });
+    add("exp_homestay", SIKKIM, "Lachung homestay", 9600, "stay", addDays(today, -1), ANANYA, [[ANANYA, 9600]], trip);
+    add("exp_momos", SIKKIM, "Momos & thukpa at MG Marg", 1240, "food", addDays(today, -2), BUNTY, [[BUNTY, 1240]], trip);
 
-    expense("exp_groceries", HOME, "Groceries", 9215, "groceries", addDays(today, -3), LENA, [[LENA, 9215]], [
-      [MAYA, 2304],
-      [ARUN, 2304],
-      [LENA, 2304],
-      [PRIYA, 2303],
-    ], { notes: "Trader Joe's run. Priya is one cent under so the total matches." });
+    add("exp_chai", CHAI, "Chai & samosa", 360, "chai", addDays(today, -1), ROHAN, [[ROHAN, 360]], [ANANYA, ROHAN, ZOYA, DEV], { repeat: "weekly" });
+    add("exp_cake", CHAI, "Dev's birthday cake", 1450, "gifts", addDays(today, -8), ZOYA, [[ZOYA, 1450]], [ANANYA, ROHAN, ZOYA]);
+    add("exp_coffee", null, "Third Wave coffee", 640, "chai", addDays(today, -3), ANANYA, [[ANANYA, 640]], [ANANYA, PRIYA]);
 
-    expense("exp_internet", HOME, "Internet", 8000, "utilities", addDays(today, -12), PRIYA, [[PRIYA, 8000]], [
-      [MAYA, 2000],
-      [ARUN, 2000],
-      [LENA, 2000],
-      [PRIYA, 2000],
-    ]);
+    insertExpense(db, {
+      id: "exp_settle_rohan",
+      groupId: FLAT,
+      description: "Rohan paid Ananya",
+      amountMinor: 1000000,
+      currency: "INR",
+      category: "settlement",
+      date: addDays(today, -4),
+      notes: "UPI",
+      splitType: "exact",
+      payers: [{ userId: ROHAN, minor: 1000000 }],
+      shares: [{ userId: ANANYA, minor: 1000000 }],
+      repeat: "none",
+      repeatUntil: null,
+      createdBy: ROHAN,
+    });
 
-    expense("exp_cleaner", HOME, "Cleaner", 6000, "home", addDays(today, -16), LENA, [[LENA, 6000]], [
-      [MAYA, 1500],
-      [ARUN, 1500],
-      [LENA, 1500],
-      [PRIYA, 1500],
-    ], { repeat: "weekly", notes: "Every Thursday morning." });
+    const comment = db.prepare(`INSERT INTO comments (id, expense_id, user_id, body, created_at) VALUES (?, ?, ?, ?, ?)`);
+    comment.run("cmt_rent", "exp_rent", PRIYA, "Sending mine on Friday after salary 🙏", now);
+    comment.run("cmt_innova", "exp_innova", ZOYA, "Pemba bhaiya was the best. Tip him on the last day!", now);
 
-    expense("exp_airbnb", TRIP, "Alfama apartment", 78000, "travel", addDays(today, -20), MAYA, [[MAYA, 78000]], [
-      [MAYA, 26000],
-      [SAM, 26000],
-      [NOAH, 26000],
-    ], { notes: "Three nights. Check-in code is on the booking." });
-
-    expense("exp_flights", TRIP, "Flights", 54000, "travel", addDays(today, -28), SAM, [[SAM, 54000]], [
-      [MAYA, 18000],
-      [SAM, 18000],
-      [NOAH, 18000],
-    ]);
-
-    expense("exp_dinner_lx", TRIP, "Time Out Market", 9600, "food", addDays(today, -19), NOAH, [[NOAH, 9600]], [
-      [MAYA, 3200],
-      [SAM, 3200],
-      [NOAH, 3200],
-    ]);
-
-    expense("exp_train", TRIP, "Train to Sintra", 4200, "transport", addDays(today, -18), MAYA, [[MAYA, 4200]], [
-      [MAYA, 2100],
-      [SAM, 2100],
-    ], { notes: "Noah stayed in to work." });
-
-    expense("exp_pasta", DINNERS, "Pasta night", 6400, "food", addDays(today, -8), MAYA, [[MAYA, 6400]], [
-      [MAYA, 1600],
-      [ARUN, 1600],
-      [SAM, 1600],
-      [NOAH, 1600],
-    ]);
-
-    expense("exp_sushi", DINNERS, "Sushi", 11000, "food", addDays(today, -1), SAM, [[SAM, 11000]], [
-      [MAYA, 2750],
-      [ARUN, 2750],
-      [SAM, 2750],
-      [NOAH, 2750],
-    ]);
-
-    expense("exp_coffee", null, "Coffee and buns", 1800, "food", addDays(today, -2), MAYA, [[MAYA, 1800]], [
-      [MAYA, 900],
-      [PRIYA, 900],
-    ], { notes: "Outside the apartment group, just the two of us." });
-
-    expense(
-      "exp_settle_arun",
-      HOME,
-      "Arun paid Maya",
-      40000,
-      "settlement",
-      addDays(today, -4),
-      ARUN,
-      [[ARUN, 40000]],
-      [[MAYA, 40000]],
-      { splitType: "exact", notes: "Venmo, toward rent." },
+    // Seeded without email: these are demo addresses.
+    const note = db.prepare(
+      `INSERT INTO notifications (id, user_id, type, title, body, href, read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
     );
-
-    db.prepare(
-      `INSERT INTO comments (id, expense_id, user_id, body, created_at) VALUES (?, ?, ?, ?, ?)`,
-    ).run("cmt_rent", "exp_rent", PRIYA, "I can send my share on Friday.", now);
-    db.prepare(
-      `INSERT INTO comments (id, expense_id, user_id, body, created_at) VALUES (?, ?, ?, ?, ?)`,
-    ).run("cmt_airbnb", "exp_airbnb", NOAH, "The rooftop was worth it.", now);
-
-    addNotification(db, {
-      userId: MAYA,
-      type: "expense",
-      title: "Sam added Sushi",
-      body: "Friday dinners · $110.00",
-      href: "/expenses/exp_sushi",
-    });
-    addNotification(db, {
-      userId: MAYA,
-      type: "comment",
-      title: "Priya commented on November rent",
-      body: "I can send my share on Friday.",
-      href: "/expenses/exp_rent",
-    });
-    addNotification(db, {
-      userId: MAYA,
-      type: "settlement",
-      title: "Arun recorded a payment",
-      body: "Arun paid you $400.00 in Apartment 4B.",
-      href: "/expenses/exp_settle_arun",
-    });
+    note.run("ntf_1", ANANYA, "expense", "Dev added Innova for 6 days", "Sikkim road trip · ₹24,000", "/expenses/exp_innova", now);
+    note.run("ntf_2", ANANYA, "comment", "Priya commented on Rent", "Sending mine on Friday after salary 🙏", "/expenses/exp_rent", now);
+    note.run("ntf_3", ANANYA, "settlement", "Rohan recorded a payment", "Rohan paid you ₹10,000 in Flat 302.", "/expenses/exp_settle_rohan", now);
   });
 
   tx();

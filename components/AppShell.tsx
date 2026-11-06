@@ -7,7 +7,7 @@ import { logout, notificationOpen, notificationsRead } from "@/lib/actions";
 import type { NotificationItem } from "@/lib/types";
 import { Avatar, GroupMark, Logo } from "./ui";
 
-type GroupLink = { id: string; name: string; type: string };
+type GroupLink = { id: string; name: string; type: string; destination: string };
 
 export function AppShell({
   user,
@@ -27,9 +27,6 @@ export function AppShell({
 
   return (
     <div className="shell">
-      <a className="skip" href="#main">
-        Skip to content
-      </a>
       <aside className="sidebar">
         <Logo href="/dashboard" />
         <nav className="side-scroll" aria-label="Primary">
@@ -45,13 +42,19 @@ export function AppShell({
           <Link className={on("/groups", true) ? "nav-link active" : "nav-link"} href="/groups">
             Groups
           </Link>
+          <Link className={on("/explore") ? "nav-link active" : "nav-link"} href="/explore">
+            Explore trips
+          </Link>
+          <Link className={on("/account") ? "nav-link active" : "nav-link"} href="/account">
+            Account
+          </Link>
           <div className="side-label">
             Your groups
             <Link href="/groups#new">New</Link>
           </div>
           {groups.map((group) => (
             <Link key={group.id} href={`/groups/${group.id}`} className={path === `/groups/${group.id}` ? "group-link active" : "group-link"}>
-              <GroupMark id={group.id} type={group.type} size={28} />
+              <GroupMark id={group.id} type={group.type} destination={group.destination} size={28} />
               <span>{group.name}</span>
             </Link>
           ))}
@@ -109,8 +112,8 @@ export function AppShell({
               ))}
             </div>
           </details>
-          <Link className="btn" href="/expenses/new">
-            Add expense
+          <Link className="btn hide-sm" href="/expenses/new">
+            + Add expense
           </Link>
         </header>
         <main id="main" className="content">
@@ -127,11 +130,14 @@ export function AppShell({
         <Link className={on("/friends") ? "active" : ""} href="/friends">
           Friends
         </Link>
+        <Link className="fab" href="/expenses/new" aria-label="Add expense">
+          +
+        </Link>
         <Link className={on("/activity", true) ? "active" : ""} href="/activity">
           Activity
         </Link>
-        <Link className={on("/account", true) ? "active" : ""} href="/account">
-          Account
+        <Link className={on("/account", true) || on("/explore") ? "active" : ""} href="/account">
+          Me
         </Link>
       </nav>
     </div>

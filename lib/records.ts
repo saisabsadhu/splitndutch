@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { nowISO } from "./dates";
+import { queueMail } from "./email";
 import type { ExpenseInput } from "./types";
 
 export function pairKey(a: string, b: string): [string, string] {
@@ -15,6 +16,9 @@ export function ensureFriendship(db: Database.Database, a: string, b: string) {
   ).run(low, high, nowISO());
 }
 
+/** Types worth an email for people on the default "important only" setting. */
+const IMPORTANT = new Set(["friend", "group", "settlement", "reminder"]);
+
 export function addNotification(
   db: Database.Database,
   note: { userId: string; type: string; title: string; body: string; href: string },
@@ -23,6 +27,19 @@ export function addNotification(
     `INSERT INTO notifications (id, user_id, type, title, body, href, read_at, created_at)
      VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
   ).run(crypto.randomUUID(), note.userId, note.type, note.title, note.body, note.href, nowISO());
+  const to = db
+    .prepare(`SELECT email, status, email_prefs AS prefs FROM users WHERE id = ?`)
+    .get(note.userId) as { email: string; status: string; prefs: number } | undefined;
+  // Invited people get their own invite email instead; guests have no inbox.
+  if (!to || to.status !== "active") return;
+  if (to.prefs === 0 || (to.prefs === 1 && !IMPORTANT.has(note.type))) return;
+  queueMail({
+    to: to.email,
+    subject: note.title,
+    heading: note.title,
+    lines: [note.body],
+    cta: { label: "Open SplitnDutch", href: note.href },
+  });
 }
 
 export function notifyOthers(
